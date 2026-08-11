@@ -244,6 +244,21 @@
 
 <script>
 const STORAGE_KEY = 'painel-obras-state-v1';
+// URL do Web App do Google Apps Script (termina em /exec).
+// É esse endpoint que faz os dados aparecerem iguais em qualquer computador.
+const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz_HZmaQx4L-9f4c8cyvUCkic2PjbMW4YO6v5Cp8lh-q5JQtOZQVRcGUJhZIDCpgFra8A/exec';
+
+function syncToSheets(stateToSync){
+  if(!SHEETS_WEBAPP_URL) return;
+  try{
+    fetch(SHEETS_WEBAPP_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(stateToSync)
+    }).catch(function(e){ console.warn('Falha ao sincronizar com a planilha', e); });
+  }catch(e){ console.warn('Falha ao sincronizar com a planilha', e); }
+}
 
 const MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 const DOWS = ['dom','seg','ter','qua','qui','sex','sáb'];
@@ -315,12 +330,26 @@ let saveTimeout = null;
 async function loadState(){
   let loaded = null;
 
-  try{
-    if(window.storage){
-      const r = await window.storage.get(STORAGE_KEY, false);
-      loaded = r ? JSON.parse(r.value) : null;
+  if(SHEETS_WEBAPP_URL){
+    try{
+      const resp = await fetch(SHEETS_WEBAPP_URL, { method: 'GET' });
+      if(resp.ok){
+        const data = await resp.json();
+        if(data && data.obras) loaded = data;
+      }
+    }catch(e){
+      console.warn('Não foi possível carregar da planilha, tentando backup local', e);
     }
-  }catch(e){ /* ignore, tenta próximo fallback */ }
+  }
+
+  if(loaded === null){
+    try{
+      if(window.storage){
+        const r = await window.storage.get(STORAGE_KEY, false);
+        loaded = r ? JSON.parse(r.value) : null;
+      }
+    }catch(e){ /* ignore, tenta próximo fallback */ }
+  }
 
   if(loaded === null){
     try{
@@ -350,6 +379,7 @@ function persist(){
     try{
       localStorage.setItem(STORAGE_KEY, json);
     }catch(e){ /* ignore */ }
+    syncToSheets(state);
     if(dot) dot.classList.remove('saving');
   }, 400);
 }
@@ -398,7 +428,7 @@ function render(){
         <h1>Painel de Obras — Casa Gil</h1>
         <div class="sub">Controle de diárias, materiais, locações e faturamento</div>
       </div>
-      <div class="save-indicator"><span class="save-dot" id="save-dot"></span> salvo automaticamente</div>
+      <div class="save-indicator"><span class="save-dot" id="save-dot"></span> salvo automaticamente${SHEETS_WEBAPP_URL ? ' · <span style="color:var(--ok)">🔗 sincronizado entre computadores</span>' : ''}</div>
     </div>
 
     <div class="tabs">
