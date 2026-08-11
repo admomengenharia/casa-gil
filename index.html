@@ -244,6 +244,8 @@
 
 <script>
 const STORAGE_KEY = 'painel-obras-state-v1';
+// Link da pasta no Google Drive com todas as NFs desta obra.
+const PASTA_NFS_URL = 'https://drive.google.com/drive/folders/1vhYbl3PFmstrYS0c6DJWSB4yhIXHm9Jx?usp=sharing';
 // URL do Web App do Google Apps Script (termina em /exec).
 // É esse endpoint que faz os dados aparecerem iguais em qualquer computador.
 const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz_HZmaQx4L-9f4c8cyvUCkic2PjbMW4YO6v5Cp8lh-q5JQtOZQVRcGUJhZIDCpgFra8A/exec';
@@ -398,8 +400,9 @@ function tabsForObra(key){
   const o = state.obras[key];
   const tabs = [];
   if(o.diarias !== undefined) tabs.push('diarias');
-  tabs.push('materiais','locacoes','faturamento');
+  tabs.push('materiais','locacoes');
   if(o.inventario !== undefined) tabs.push('inventario');
+  tabs.push('resumo');
   return tabs;
 }
 
@@ -407,8 +410,8 @@ const TAB_LABELS = {
   diarias: '📅 Diárias',
   materiais: '🧾 Materiais',
   locacoes: '🔧 Locações',
-  faturamento: '💰 Faturamento',
-  inventario: '📦 Inventário / Almoxarifado'
+  inventario: '📦 Inventário / Almoxarifado',
+  resumo: '📊 Resumo Geral'
 };
 
 /* ---------- RENDER ROOT ---------- */
@@ -426,7 +429,7 @@ function render(){
       <div>
         <div class="eyebrow">Canteiro // Gestão de obras</div>
         <h1>Painel de Obras — Casa Gil</h1>
-        <div class="sub">Controle de diárias, materiais, locações e faturamento</div>
+        <div class="sub">Controle de diárias, materiais, locações e resumo geral</div>
       </div>
       <div class="save-indicator"><span class="save-dot" id="save-dot"></span> salvo automaticamente${SHEETS_WEBAPP_URL ? ' · <span style="color:var(--ok)">🔗 sincronizado entre computadores</span>' : ''}</div>
     </div>
@@ -455,8 +458,8 @@ function renderTabContent(){
   if(tab === 'diarias') el.innerHTML = renderDiarias(key);
   else if(tab === 'materiais') el.innerHTML = renderMateriais(key);
   else if(tab === 'locacoes') el.innerHTML = renderLocacoes(key);
-  else if(tab === 'faturamento') el.innerHTML = renderFaturamento(key);
   else if(tab === 'inventario') el.innerHTML = renderInventario(key);
+  else if(tab === 'resumo') el.innerHTML = renderResumo(key);
   bindTabEvents();
 }
 
@@ -611,6 +614,9 @@ function renderMateriais(key){
     <div class="panel">
       <h3>Materiais comprados — ${o.nome}</h3>
       <p class="desc">Registre material, valor, número da nota fiscal e vencimento do boleto.</p>
+      <p class="desc" style="margin-top:-14px;">
+        📁 <a href="${PASTA_NFS_URL}" target="_blank" rel="noopener" style="color:var(--accent-amber);">Abrir pasta de NFs desta obra no Google Drive</a>
+      </p>
 
       <div class="summary-bar">
         <div class="summary-item"><div class="label">Total investido</div><div class="val">${fmtBRL(totalValor)}</div></div>
@@ -621,19 +627,28 @@ function renderMateriais(key){
       <div class="table-wrap">
       <table>
         <thead><tr>
-          <th style="width:26%">Material</th>
-          <th style="width:14%">Valor</th>
-          <th style="width:16%">Nº NF</th>
-          <th style="width:16%">Venc. boleto</th>
-          <th style="width:14%">Status</th>
-          <th style="width:6%"></th>
+          <th style="width:17%">Material</th>
+          <th style="width:13%">Fornecedor</th>
+          <th style="width:9%">Valor</th>
+          <th style="width:9%">Nº NF</th>
+          <th style="width:15%">NF (link do Drive)</th>
+          <th style="width:12%">Venc. boleto</th>
+          <th style="width:12%">Status</th>
+          <th style="width:5%"></th>
         </tr></thead>
         <tbody>
           ${items.map(item => `
             <tr data-id="${item.id}">
               <td><input class="cell-input" data-field="nome" value="${escAttr(item.nome)}" placeholder="Ex.: Cimento CP-II 50kg"></td>
+              <td><input class="cell-input" data-field="fornecedor" value="${escAttr(item.fornecedor)}" placeholder="Nome do fornecedor"></td>
               <td><input class="cell-input mono" data-field="valor" type="number" step="0.01" value="${item.valor||''}" placeholder="0,00"></td>
               <td><input class="cell-input mono" data-field="nf" value="${escAttr(item.nf)}" placeholder="000123"></td>
+              <td>
+                <div style="display:flex;gap:4px;align-items:center;">
+                  <input class="cell-input" data-field="nfLink" value="${escAttr(item.nfLink)}" placeholder="Colar link do Drive" style="font-size:11px;">
+                  ${item.nfLink ? `<a href="${escAttr(item.nfLink)}" target="_blank" rel="noopener" title="Abrir NF" style="flex:none;text-decoration:none;font-size:14px;">📎</a>` : ''}
+                </div>
+              </td>
               <td><input class="cell-input mono" data-field="vencimento" type="date" value="${item.vencimento||''}"></td>
               <td>
                 <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);">
@@ -648,6 +663,10 @@ function renderMateriais(key){
       </table>
       </div>
       <button class="add-btn" data-action="add-material">+ adicionar material</button>
+
+      <div style="margin-top:10px;font-size:12px;color:var(--text-faint);">
+        💡 Dica: crie uma pasta no Google Drive só para as NFs dessa obra, suba os arquivos lá, clique com o botão direito → Compartilhar → Copiar link, e cole na coluna "NF (link do Drive)" de cada material.
+      </div>
 
       <div class="lista-compra">
         <h4>📋 Lista de compra — adicionar vários materiais de uma vez</h4>
@@ -807,6 +826,38 @@ function renderInventario(key){
   `;
 }
 
+/* ---------- RESUMO GERAL ---------- */
+function renderResumo(key){
+  const o = state.obras[key];
+
+  const somaMateriais = (o.materiais||[]).reduce((s,i)=>s+(Number(i.valor)||0),0);
+  const somaLocacoes = (o.locacoes||[]).reduce((s,i)=>s+(Number(i.valor)||0),0);
+  const somaDiariasPagas = (o.historicoPagamentos||[]).reduce((s,h)=>s+(Number(h.valor)||0),0);
+  const totalRealizado = somaMateriais + somaLocacoes + somaDiariasPagas;
+
+  return `
+    <div class="panel">
+      <h3>Resumo Geral — ${o.nome}</h3>
+      <p class="desc">Somatório de tudo que já foi efetivamente gasto na obra até agora.</p>
+
+      <div class="summary-bar">
+        <div class="summary-item"><div class="label">Materiais</div><div class="val">${fmtBRL(somaMateriais)}</div></div>
+        <div class="summary-item"><div class="label">Locações</div><div class="val">${fmtBRL(somaLocacoes)}</div></div>
+        <div class="summary-item"><div class="label">Diárias pagas</div><div class="val">${fmtBRL(somaDiariasPagas)}</div></div>
+        <div class="summary-item"><div class="label">Total já realizado</div><div class="val" style="color:var(--accent-amber);font-size:22px;">${fmtBRL(totalRealizado)}</div></div>
+      </div>
+
+      <div class="calc-pagamento">
+        <h4>Como esse total é calculado</h4>
+        <p class="desc">
+          Total já realizado = Materiais (${fmtBRL(somaMateriais)}) + Locações (${fmtBRL(somaLocacoes)}) + Diárias já pagas (${fmtBRL(somaDiariasPagas)}).
+          <br>Esse valor representa o custo real que já saiu do caixa da obra até agora.
+        </p>
+      </div>
+    </div>
+  `;
+}
+
 function escAttr(v){
   if(v===undefined || v===null) return '';
   return String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
@@ -952,37 +1003,11 @@ function bindTabEvents(){
   if(tab === 'inventario'){
     bindListTab(content, o.inventario, 'del-inventario', renderInventario, key);
   }
-  if(tab === 'faturamento'){
-    const inputContratado = content.querySelector('#input-contratado');
-    if(inputContratado){
-      inputContratado.addEventListener('input', ()=>{
-        o.faturamento.contratado = Number(inputContratado.value);
-        persist();
-        // update saldo/faturado displays without full rerender loss of focus
-        const saldo = (Number(o.faturamento.contratado)||0) - sumMedicoes(o);
-        const saldoEl = content.querySelector('.fat-card.saldo .val-display');
-        if(saldoEl){
-          saldoEl.textContent = fmtBRL(saldo);
-          saldoEl.className = 'val-display ' + (saldo<0?'danger':'ok');
-        }
-      });
-    }
-    bindListTab(content, o.faturamento.medicoes, 'del-medicao', renderFaturamento, key, true);
-    const addBtn = content.querySelector('[data-action="add-medicao"]');
-    if(addBtn){
-      addBtn.addEventListener('click', ()=>{
-        o.faturamento.medicoes.push({id: uid(), data:'', descricao:'', valor:''});
-        persist();
-        content.innerHTML = renderFaturamento(key);
-        bindTabEvents();
-      });
-    }
-  }
 
   // add buttons for materiais / locacoes / inventario
   const addMaterial = content.querySelector('[data-action="add-material"]');
   if(addMaterial) addMaterial.addEventListener('click', ()=>{
-    o.materiais.push({id: uid(), nome:'', valor:'', nf:'', vencimento:'', pago:false});
+    o.materiais.push({id: uid(), nome:'', fornecedor:'', valor:'', nf:'', nfLink:'', vencimento:'', pago:false});
     persist(); content.innerHTML = renderMateriais(key); bindTabEvents();
   });
   const addListaCompra = content.querySelector('[data-action="add-lista-compra"]');
@@ -991,7 +1016,7 @@ function bindTabEvents(){
     if(!textarea) return;
     const linhas = textarea.value.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
     linhas.forEach(nome=>{
-      o.materiais.push({id: uid(), nome, valor:'', nf:'', vencimento:'', pago:false});
+      o.materiais.push({id: uid(), nome, fornecedor:'', valor:'', nf:'', nfLink:'', vencimento:'', pago:false});
     });
     if(linhas.length>0){
       persist();
@@ -1018,12 +1043,12 @@ function bindListTab(content, list, delAction, renderFn, key, isMedicao){
     if(!item) return;
     row.querySelectorAll('[data-field]').forEach(field=>{
       const f = field.dataset.field;
-      const evt = (field.type === 'checkbox' || field.tagName==='SELECT') ? 'change' : 'input';
+      const evt = (field.type === 'checkbox' || field.tagName==='SELECT' || f==='nfLink') ? 'change' : 'input';
       field.addEventListener(evt, ()=>{
         item[f] = field.type === 'checkbox' ? field.checked : field.value;
         persist();
         // Live re-render for fields affecting status/badges without losing focus on text inputs
-        if(field.type === 'checkbox' || f==='vencimento' || field.tagName==='SELECT'){
+        if(field.type === 'checkbox' || f==='vencimento' || f==='nfLink' || field.tagName==='SELECT'){
           content.innerHTML = renderFn(key);
           bindTabEvents();
         }
