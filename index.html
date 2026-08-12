@@ -788,9 +788,26 @@ function renderLocacoes(key){
       <td><input class="cell-input mono" data-field="fim" type="date" value="${item.fim||''}"></td>
       <td><input class="cell-input mono" data-field="valor" type="number" step="0.01" value="${item.valor||''}" placeholder="0,00"></td>
       <td>
+        <div style="display:flex;gap:4px;align-items:center;">
+          <input class="cell-input" data-field="nfLink" value="${escAttr(item.nfLink)}" placeholder="Colar link do Drive" style="font-size:11px;">
+          ${item.nfLink ? `<a href="${escAttr(item.nfLink)}" target="_blank" rel="noopener" title="Abrir NF" style="flex:none;text-decoration:none;font-size:14px;">📎</a>` : ''}
+        </div>
+      </td>
+      <td>
         <select class="cell-input" data-field="status">
           ${['Pendente','Ativa','Concluída'].map(s=>`<option value="${s}" ${item.status===s?'selected':''}>${s}</option>`).join('')}
         </select>
+      </td>
+      <td style="text-align:center;">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <span class="badge ${(item.historicoRenovacoes||[]).length>0?'ok':'warn'}" title="${(item.historicoRenovacoes||[]).map(d=>d.split('-').reverse().join('/')).join(', ') || 'Nenhuma renovação'}">
+            ${(item.historicoRenovacoes||[]).length} renovação(ões)
+          </span>
+          <div style="display:flex;gap:4px;">
+            <button class="mark-paid-btn" data-action="add-renovacao" style="padding:3px 8px;font-size:10px;">🔄 registrar</button>
+            ${(item.historicoRenovacoes||[]).length>0 ? `<button class="icon-btn" data-action="undo-renovacao" title="Desfazer última renovação registrada" style="width:22px;height:22px;font-size:11px;">↺</button>` : ''}
+          </div>
+        </div>
       </td>
       <td><button class="icon-btn" data-action="del-locacao">✕</button></td>
     </tr>
@@ -803,7 +820,9 @@ function renderLocacoes(key){
       <td class="mono-cell">${item.inicio ? item.inicio.split('-').reverse().join('/') : '<span style="color:var(--text-faint)">—</span>'}</td>
       <td class="mono-cell">${item.fim ? item.fim.split('-').reverse().join('/') : '<span style="color:var(--text-faint)">—</span>'}</td>
       <td class="mono-cell">${fmtBRL(item.valor)}</td>
+      <td>${item.nfLink ? `<a href="${escAttr(item.nfLink)}" target="_blank" rel="noopener" style="color:var(--accent-amber);">📎 Ver NF</a>` : '<span style="color:var(--text-faint)">—</span>'}</td>
       <td><span class="badge ${item.status==='Ativa'?'ok':(item.status==='Concluída'?'warn':'danger')}">${escAttr(item.status)||'—'}</span></td>
+      <td><span class="badge ${(item.historicoRenovacoes||[]).length>0?'ok':'warn'}" title="${(item.historicoRenovacoes||[]).map(d=>d.split('-').reverse().join('/')).join(', ') || 'Nenhuma renovação'}">${(item.historicoRenovacoes||[]).length} renovação(ões)</span></td>
     </tr>
   `;
 
@@ -827,26 +846,31 @@ function renderLocacoes(key){
       <div class="summary-bar">
         <div class="summary-item"><div class="label">Total em locações${filtroAtivo?' (filtrado)':''}</div><div class="val">${fmtBRL(totalValor)}</div></div>
         <div class="summary-item"><div class="label">Itens ativos</div><div class="val ok">${items.filter(i=>i.status==='Ativa').length}</div></div>
+        <div class="summary-item"><div class="label">Renovações registradas</div><div class="val ok">${items.reduce((s,i)=>s+((i.historicoRenovacoes||[]).length),0)}</div></div>
       </div>
 
       <div class="table-wrap">
       <table>
         <thead><tr>
           ${isEditor ? `
-          <th style="width:24%">Equipamento / Serviço</th>
-          <th style="width:20%">Fornecedor</th>
-          <th style="width:14%">Início</th>
-          <th style="width:14%">Fim</th>
-          <th style="width:14%">Valor</th>
+          <th style="width:16%">Equipamento / Serviço</th>
+          <th style="width:13%">Fornecedor</th>
+          <th style="width:10%">Início</th>
+          <th style="width:10%">Fim</th>
+          <th style="width:10%">Valor</th>
+          <th style="width:14%">NF (link do Drive)</th>
           <th style="width:10%">Status</th>
-          <th style="width:4%"></th>
+          <th style="width:12%">Renovada</th>
+          <th style="width:5%"></th>
           ` : `
-          <th style="width:26%">Equipamento / Serviço</th>
-          <th style="width:22%">Fornecedor</th>
-          <th style="width:15%">Início</th>
-          <th style="width:15%">Fim</th>
-          <th style="width:12%">Valor</th>
-          <th style="width:10%">Status</th>
+          <th style="width:18%">Equipamento / Serviço</th>
+          <th style="width:15%">Fornecedor</th>
+          <th style="width:11%">Início</th>
+          <th style="width:11%">Fim</th>
+          <th style="width:10%">Valor</th>
+          <th style="width:12%">NF</th>
+          <th style="width:11%">Status</th>
+          <th style="width:12%">Renovada</th>
           `}
         </tr></thead>
         <tbody>
@@ -1146,6 +1170,33 @@ function bindTabEvents(){
     if(lAte) lAte.addEventListener('change', ()=>{ filtros.locacoesAte = lAte.value; content.innerHTML = renderLocacoes(key); bindTabEvents(); });
     const limparL = content.querySelector('[data-action="limpar-filtro-locacoes"]');
     if(limparL) limparL.addEventListener('click', ()=>{ filtros.locacoesDe=''; filtros.locacoesAte=''; content.innerHTML = renderLocacoes(key); bindTabEvents(); });
+    if(isEditor){
+      content.querySelectorAll('[data-action="add-renovacao"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const row = btn.closest('tr');
+          const id = row.dataset.id;
+          const item = (o.locacoes||[]).find(i=>i.id===id);
+          if(!item) return;
+          if(!item.historicoRenovacoes) item.historicoRenovacoes = [];
+          item.historicoRenovacoes.push(todayISO);
+          persist();
+          content.innerHTML = renderLocacoes(key);
+          bindTabEvents();
+        });
+      });
+      content.querySelectorAll('[data-action="undo-renovacao"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const row = btn.closest('tr');
+          const id = row.dataset.id;
+          const item = (o.locacoes||[]).find(i=>i.id===id);
+          if(!item || !item.historicoRenovacoes || !item.historicoRenovacoes.length) return;
+          item.historicoRenovacoes.pop();
+          persist();
+          content.innerHTML = renderLocacoes(key);
+          bindTabEvents();
+        });
+      });
+    }
   }
   if(tab === 'inventario'){
     if(isEditor) bindListTab(content, o.inventario, 'del-inventario', renderInventario, key);
@@ -1173,7 +1224,7 @@ function bindTabEvents(){
   });
   const addLocacao = content.querySelector('[data-action="add-locacao"]');
   if(addLocacao) addLocacao.addEventListener('click', ()=>{
-    o.locacoes.push({id: uid(), equipamento:'', fornecedor:'', inicio:'', fim:'', valor:'', status:'Pendente'});
+    o.locacoes.push({id: uid(), equipamento:'', fornecedor:'', inicio:'', fim:'', valor:'', nfLink:'', status:'Pendente', historicoRenovacoes:[]});
     persist(); content.innerHTML = renderLocacoes(key); bindTabEvents();
   });
   const addInventario = content.querySelector('[data-action="add-inventario"]');
