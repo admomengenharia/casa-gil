@@ -982,12 +982,32 @@ function renderInventario(key){
 }
 
 /* ---------- RESUMO GERAL ---------- */
+function calcularDiariasPagas(o){
+  if(o.diarias === undefined) return 0;
+  let total = 0;
+  const valorDiaria = o.valorDiaria || [0,0,0];
+  Object.keys(o.diarias || {}).forEach(mk => {
+    const diasMes = o.diarias[mk] || {};
+    const pagamentosMes = (o.pagamentos && o.pagamentos[mk]) || {};
+    Object.keys(diasMes).forEach(dayStr => {
+      const dayObj = diasMes[dayStr] || {};
+      const pagoDia = pagamentosMes[dayStr] || {};
+      [0,1,2].forEach(fi => {
+        if(dayObj[fi] && pagoDia[fi]){
+          total += Number(valorDiaria[fi]) || 0;
+        }
+      });
+    });
+  });
+  return total;
+}
+
 function renderResumo(key){
   const o = state.obras[key];
 
   const somaMateriais = (o.materiais||[]).reduce((s,i)=>s+(Number(i.valor)||0),0);
   const somaLocacoes = (o.locacoes||[]).reduce((s,i)=>s+(Number(i.valor)||0),0);
-  const somaDiariasPagas = (o.historicoPagamentos||[]).reduce((s,h)=>s+(Number(h.valor)||0),0);
+  const somaDiariasPagas = calcularDiariasPagas(o);
   const totalRealizado = somaMateriais + somaLocacoes + somaDiariasPagas;
 
   return `
