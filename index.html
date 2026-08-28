@@ -61,30 +61,6 @@
   .save-dot{width:6px;height:6px;border-radius:50%;background:var(--ok);transition:background .2s;}
   .save-dot.saving{background:var(--accent-amber);}
 
-  /* OBRA SWITCH - placas */
-  .obra-switch{display:flex;gap:14px;margin-bottom:22px;flex-wrap:wrap;}
-  .placa{
-    flex:1;min-width:260px;
-    background:var(--bg-panel);
-    border:1px solid var(--border);
-    border-left:5px solid var(--border-strong);
-    border-radius:3px;
-    padding:16px 18px;
-    cursor:pointer;
-    transition:border-color .15s, background .15s;
-    position:relative;
-  }
-  .placa:hover{background:var(--bg-panel-2);}
-  .placa.active{border-left-color:var(--accent-amber);background:var(--bg-panel-2);}
-  .placa .tag{
-    font-family:var(--font-mono);font-size:10px;color:var(--text-faint);
-    letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;
-  }
-  .placa.active .tag{color:var(--accent-amber);}
-  .placa h2{font-family:var(--font-display);font-size:18px;margin:0 0 10px;}
-  .placa .stats{display:flex;gap:16px;font-family:var(--font-mono);font-size:12px;color:var(--text-muted);flex-wrap:wrap;}
-  .placa .stats b{color:var(--text);font-weight:600;}
-
   /* TABS */
   .tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:22px;overflow-x:auto;}
   .tab-btn{
@@ -294,6 +270,50 @@
 
 <script>
 const STORAGE_KEY = 'painel-obras-state-v1';
+// Senha para liberar edição. Quem não souber a senha só visualiza.
+const EDITOR_PASSWORD = 'gil123';
+const EDITOR_KEY = 'painel-obras-editor-unlocked';
+let isEditor = false;
+try{ isEditor = localStorage.getItem(EDITOR_KEY) === '1'; }catch(e){ /* ignore */ }
+
+function tryUnlockEditor(){
+  const senha = window.prompt('Digite a senha para editar o painel:');
+  if(senha === null) return;
+  if(senha === EDITOR_PASSWORD){
+    isEditor = true;
+    try{ localStorage.setItem(EDITOR_KEY, '1'); }catch(e){ /* ignore */ }
+    render();
+  }else{
+    alert('Senha incorreta.');
+  }
+}
+
+function lockEditor(){
+  isEditor = false;
+  try{ localStorage.removeItem(EDITOR_KEY); }catch(e){ /* ignore */ }
+  render();
+}
+
+// Filtros de data usados na visualização de Materiais e Locações
+let filtros = { materiaisDe:'', materiaisAte:'', locacoesDe:'', locacoesAte:'' };
+// Link da pasta no Google Drive com todas as NFs desta obra.
+const PASTA_NFS_URL = 'https://drive.google.com/drive/folders/1vhYbl3PFmstrYS0c6DJWSB4yhIXHm9Jx?usp=sharing';
+// URL do Web App do Google Apps Script (termina em /exec).
+// É esse endpoint que faz os dados aparecerem iguais em qualquer computador.
+const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz_HZmaQx4L-9f4c8cyvUCkic2PjbMW4YO6v5Cp8lh-q5JQtOZQVRcGUJhZIDCpgFra8A/exec';
+
+function syncToSheets(stateToSync){
+  if(!SHEETS_WEBAPP_URL) return;
+  try{
+    fetch(SHEETS_WEBAPP_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(stateToSync)
+    }).catch(function(e){ console.warn('Falha ao sincronizar com a planilha', e); });
+  }catch(e){ console.warn('Falha ao sincronizar com a planilha', e); }
+}
+
 const MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 const DOWS = ['dom','seg','ter','qua','qui','sex','sáb'];
 const today = new Date();
@@ -325,27 +345,31 @@ function defaultObra(nome, opts){
 function defaultState(){
   return {
     activeObra: 'casaGil',
-    activeTab: { casaGil: 'diarias', igrejaPlena: 'materiais' },
+    activeTab: { casaGil: 'diarias' },
     obras: {
-      casaGil: defaultObra('Casa Gil - Grotão', { comDiarias: true }),
-      igrejaPlena: defaultObra('Igreja Plena - Icaraí', { comInventario: true })
+      casaGil: defaultObra('Casa Gil - Grotão', { comDiarias: true })
     }
   };
 }
 
 function migrateState(s){
-  // Igreja Plena não usa mais aba de diárias
-  const ip = s.obras && s.obras.igrejaPlena;
-  if(ip && ip.diarias !== undefined){
-    delete ip.diarias;
-    delete ip.funcionarios;
-    delete ip.viewMonth;
-    delete ip.valorDiaria;
+  // Remove qualquer obra antiga (ex.: Igreja Plena) que tenha ficado salva
+  if(s.obras){
+    Object.keys(s.obras).forEach(k=>{
+      if(k !== 'casaGil') delete s.obras[k];
+    });
+    if(s.activeTab) Object.keys(s.activeTab).forEach(k=>{
+      if(k !== 'casaGil') delete s.activeTab[k];
+    });
   }
-  if(s.activeTab && s.activeTab.igrejaPlena === 'diarias'){
-    s.activeTab.igrejaPlena = 'materiais';
+  if(!s.obras || !s.obras.casaGil){
+    s.obras = { casaGil: defaultObra('Casa Gil - Grotão', { comDiarias: true }) };
   }
-  const cg = s.obras && s.obras.casaGil;
+  s.activeObra = 'casaGil';
+  if(!s.activeTab) s.activeTab = {};
+  if(!s.activeTab.casaGil) s.activeTab.casaGil = 'diarias';
+
+  const cg = s.obras.casaGil;
   if(cg && cg.diarias !== undefined){
     if(cg.valorDiaria === undefined) cg.valorDiaria = [0,0,0];
     if(cg.pagamentos === undefined) cg.pagamentos = {};
@@ -358,6 +382,18 @@ function migrateState(s){
       cg.valorDiaria.push(0);
     }
   }
+  // normaliza renovações de locação: formato antigo era um array de datas
+  // (string ISO); agora cada renovação também guarda o valor pago nela.
+  if(cg && cg.locacoes){
+    cg.locacoes.forEach(item=>{
+      if(!item.historicoRenovacoes) return;
+      item.historicoRenovacoes = item.historicoRenovacoes.map(r=>{
+        if(typeof r === 'string') return { id: uid(), data: r, valor: 0 };
+        if(r && typeof r === 'object') return { id: r.id || uid(), data: r.data || '', valor: Number(r.valor)||0 };
+        return { id: uid(), data: '', valor: 0 };
+      });
+    });
+  }
   return s;
 }
 
@@ -365,12 +401,37 @@ let state = null;
 let saveTimeout = null;
 
 async function loadState(){
-  try{
-    const r = await window.storage.get(STORAGE_KEY, false);
-    state = r ? JSON.parse(r.value) : defaultState();
-  }catch(e){
-    state = defaultState();
+  let loaded = null;
+
+  if(SHEETS_WEBAPP_URL){
+    try{
+      const resp = await fetch(SHEETS_WEBAPP_URL, { method: 'GET' });
+      if(resp.ok){
+        const data = await resp.json();
+        if(data && data.obras) loaded = data;
+      }
+    }catch(e){
+      console.warn('Não foi possível carregar da planilha, tentando backup local', e);
+    }
   }
+
+  if(loaded === null){
+    try{
+      if(window.storage){
+        const r = await window.storage.get(STORAGE_KEY, false);
+        loaded = r ? JSON.parse(r.value) : null;
+      }
+    }catch(e){ /* ignore, tenta próximo fallback */ }
+  }
+
+  if(loaded === null){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      loaded = raw ? JSON.parse(raw) : null;
+    }catch(e){ /* ignore */ }
+  }
+
+  state = loaded || defaultState();
   state = migrateState(state);
   render();
 }
@@ -380,9 +441,18 @@ function persist(){
   if(dot) dot.classList.add('saving');
   clearTimeout(saveTimeout);
   saveTimeout = setTimeout(async ()=>{
+    const json = JSON.stringify(state);
     try{
-      await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
-    }catch(e){ console.error('Erro ao salvar', e); }
+      if(window.storage){
+        await window.storage.set(STORAGE_KEY, json, false);
+      }
+    }catch(e){
+      console.warn('Falha ao salvar no armazenamento do Claude, usando backup local por enquanto', e);
+    }
+    try{
+      localStorage.setItem(STORAGE_KEY, json);
+    }catch(e){ /* ignore */ }
+    syncToSheets(state);
     if(dot) dot.classList.remove('saving');
   }, 400);
 }
@@ -401,8 +471,9 @@ function tabsForObra(key){
   const o = state.obras[key];
   const tabs = [];
   if(o.diarias !== undefined) tabs.push('diarias');
-  tabs.push('materiais','locacoes','faturamento');
+  tabs.push('materiais','locacoes');
   if(o.inventario !== undefined) tabs.push('inventario');
+  tabs.push('resumo');
   return tabs;
 }
 
@@ -410,8 +481,8 @@ const TAB_LABELS = {
   diarias: '📅 Diárias',
   materiais: '🧾 Materiais',
   locacoes: '🔧 Locações',
-  faturamento: '💰 Faturamento',
-  inventario: '📦 Inventário / Almoxarifado'
+  inventario: '📦 Inventário / Almoxarifado',
+  resumo: '📊 Resumo Geral'
 };
 
 /* ---------- RENDER ROOT ---------- */
@@ -428,14 +499,15 @@ function render(){
     <div class="header">
       <div>
         <div class="eyebrow">Canteiro // Gestão de obras</div>
-        <h1>Painel de Obras</h1>
-        <div class="sub">Controle de diárias, materiais, locações e faturamento</div>
+        <h1>Painel de Obras — Casa Gil</h1>
+        <div class="sub">Controle de diárias, materiais, locações e resumo geral</div>
       </div>
-      <div class="save-indicator"><span class="save-dot" id="save-dot"></span> salvo automaticamente</div>
-    </div>
-
-    <div class="obra-switch">
-      ${Object.keys(state.obras).map(k => renderPlaca(k)).join('')}
+      <div class="save-indicator">
+        <span class="save-dot" id="save-dot"></span> salvo automaticamente${SHEETS_WEBAPP_URL ? ' · <span style="color:var(--ok)">🔗 sincronizado entre computadores</span>' : ''}
+        · ${isEditor
+          ? `<span style="color:var(--ok)">🔓 modo editor</span> <button data-action="lock-editor" style="background:none;border:1px solid var(--border-strong);color:var(--text-muted);font-family:var(--font-mono);font-size:11px;padding:2px 8px;border-radius:3px;cursor:pointer;margin-left:6px;">sair</button>`
+          : `<button data-action="unlock-editor" style="background:none;border:1px solid var(--border-strong);color:var(--text-muted);font-family:var(--font-mono);font-size:11px;padding:2px 8px;border-radius:3px;cursor:pointer;">🔒 entrar como editor</button>`}
+      </div>
     </div>
 
     <div class="tabs">
@@ -449,24 +521,6 @@ function render(){
 
   renderTabContent();
   bindGlobalEvents();
-}
-
-function renderPlaca(key){
-  const o = state.obras[key];
-  const isActive = state.activeObra === key;
-  const totalMateriaisPendentes = (o.materiais||[]).filter(m => !m.pago).length;
-  const saldo = (o.faturamento.contratado||0) - sumMedicoes(o);
-  return `
-    <div class="placa ${isActive?'active':''}" data-action="switch-obra" data-obra="${key}">
-      <div class="tag">Obra</div>
-      <h2>${o.nome}</h2>
-      <div class="stats">
-        <span>Materiais pend.: <b>${totalMateriaisPendentes}</b></span>
-        <span>Locações: <b>${(o.locacoes||[]).length}</b></span>
-        <span>Saldo a faturar: <b>${fmtBRL(saldo)}</b></span>
-      </div>
-    </div>
-  `;
 }
 
 function sumMedicoes(o){
@@ -506,8 +560,8 @@ function renderTabContent(){
   if(tab === 'diarias') el.innerHTML = renderDiarias(key);
   else if(tab === 'materiais') el.innerHTML = renderMateriais(key);
   else if(tab === 'locacoes') el.innerHTML = renderLocacoes(key);
-  else if(tab === 'faturamento') el.innerHTML = renderFaturamento(key);
   else if(tab === 'inventario') el.innerHTML = renderInventario(key);
+  else if(tab === 'resumo') el.innerHTML = renderResumo(key);
   bindTabEvents();
 }
 
@@ -545,11 +599,19 @@ function renderDiarias(key){
       const worked = !!dayObj[fi];
       const paid = worked && !!pagoDia[fi];
       const initial = o.funcionarios[fi] ? o.funcionarios[fi].trim().charAt(0).toUpperCase() : (fi+1);
+      if(isEditor){
+        return `
+          <button class="stamp ${worked?'on f'+fi:''}" data-action="toggle-day" data-day="${d}" data-func="${fi}" title="${o.funcionarios[fi]}">
+            ${initial}
+            ${worked ? `<span class="paid-toggle ${paid?'paid':''}" data-action="toggle-paid" data-day="${d}" data-func="${fi}" title="${paid?'Pago — clique para desmarcar':'Marcar diária como paga'}">✓</span>` : ''}
+          </button>
+        `;
+      }
       return `
-        <button class="stamp ${worked?'on f'+fi:''}" data-action="toggle-day" data-day="${d}" data-func="${fi}" title="${o.funcionarios[fi]}">
+        <span class="stamp ${worked?'on f'+fi:''}" style="cursor:default;" title="${o.funcionarios[fi]}">
           ${initial}
-          ${worked ? `<span class="paid-toggle ${paid?'paid':''}" data-action="toggle-paid" data-day="${d}" data-func="${fi}" title="${paid?'Pago — clique para desmarcar':'Marcar diária como paga'}">✓</span>` : ''}
-        </button>
+          ${worked && paid ? `<span class="paid-toggle paid" style="cursor:default;">✓</span>` : ''}
+        </span>
       `;
     }).join('');
     cells += `
@@ -572,7 +634,7 @@ function renderDiarias(key){
   return `
     <div class="panel">
       <h3>Diárias — ${o.nome}</h3>
-      <p class="desc">Clique no carimbo para marcar presença. O ✓ no canto marca se aquela diária já foi paga.</p>
+      <p class="desc">${isEditor ? 'Clique no carimbo para marcar presença. O ✓ no canto marca se aquela diária já foi paga.' : 'Acompanhamento de presença e pagamentos dos funcionários.'}</p>
 
       <div class="summary-bar">
         <div class="summary-item"><div class="label">Diárias já pagas</div><div class="val ok">${pagoGeral.totalDias}</div></div>
@@ -581,8 +643,10 @@ function renderDiarias(key){
       </div>
 
       <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
-        ${FIS.map(fi => `
+        ${FIS.map(fi => isEditor ? `
           <input class="func-input" data-action="edit-func" data-func="${fi}" value="${o.funcionarios[fi]}" placeholder="Nome do funcionário ${fi+1}">
+        ` : `
+          <span class="func-input" style="display:inline-flex;align-items:center;">${escAttr(o.funcionarios[fi])}</span>
         `).join('')}
       </div>
 
@@ -613,6 +677,7 @@ function renderDiarias(key){
         `).join('')}
       </div>
 
+      ${isEditor ? `
       <div class="calc-pagamento">
         <h4>Calculadora de pagamento — ${MESES[monthIdx]}</h4>
         <p class="desc">O valor considera apenas as diárias ainda não pagas, para não contar duas vezes.</p>
@@ -628,13 +693,14 @@ function renderDiarias(key){
         <div class="calc-total">Total a pagar (pendente) no mês: <b id="calc-total-geral">${fmtBRL(totalGeralPendente)}</b></div>
         <div class="calc-total">Total já pago (todos os meses): <b id="calc-total-pago">${fmtBRL(pagoGeral.totalValor)}</b></div>
       </div>
+      ` : ''}
 
       <div class="historico-pagamentos">
         <h4>Histórico de pagamentos</h4>
         ${historico.length ? `
           <div class="table-wrap">
           <table class="historico-table">
-            <thead><tr><th>Funcionário</th><th>Mês</th><th>Dias</th><th>Valor</th><th>Registrado em</th><th></th></tr></thead>
+            <thead><tr><th>Funcionário</th><th>Mês</th><th>Dias</th><th>Valor</th><th>Registrado em</th>${isEditor?'<th></th>':''}</tr></thead>
             <tbody>
               ${historico.map(h => `
                 <tr data-id="${h.id}">
@@ -643,7 +709,7 @@ function renderDiarias(key){
                   <td class="mono-cell">${h.dias}</td>
                   <td class="mono-cell">${fmtBRL(h.valor)}</td>
                   <td class="mono-cell">${h.data}</td>
-                  <td><button class="icon-btn" data-action="del-historico">✕</button></td>
+                  ${isEditor ? `<td><button class="icon-btn" data-action="del-historico">✕</button></td>` : ''}
                 </tr>
               `).join('')}
             </tbody>
@@ -664,18 +730,75 @@ function materialStatus(item){
 
 function renderMateriais(key){
   const o = state.obras[key];
-  const items = o.materiais || [];
+  const allItems = o.materiais || [];
+  const items = allItems.filter(i => {
+    if(filtros.materiaisDe && (!i.vencimento || i.vencimento < filtros.materiaisDe)) return false;
+    if(filtros.materiaisAte && (!i.vencimento || i.vencimento > filtros.materiaisAte)) return false;
+    return true;
+  });
   const pendCount = items.filter(i=>!i.pago && !(i.vencimento && i.vencimento<todayISO)).length;
   const vencCount = items.filter(i=>!i.pago && i.vencimento && i.vencimento<todayISO).length;
   const totalValor = items.reduce((s,i)=>s+(Number(i.valor)||0),0);
 
+  const filtroAtivo = filtros.materiaisDe || filtros.materiaisAte;
+
+  const linhaEditor = (item) => `
+    <tr data-id="${item.id}">
+      <td><input class="cell-input" data-field="nome" value="${escAttr(item.nome)}" placeholder="Ex.: Cimento CP-II 50kg"></td>
+      <td><input class="cell-input" data-field="fornecedor" value="${escAttr(item.fornecedor)}" placeholder="Nome do fornecedor"></td>
+      <td><input class="cell-input mono" data-field="valor" type="number" step="0.01" value="${item.valor||''}" placeholder="0,00"></td>
+      <td><input class="cell-input mono" data-field="nf" value="${escAttr(item.nf)}" placeholder="000123"></td>
+      <td>
+        <div style="display:flex;gap:4px;align-items:center;">
+          <input class="cell-input" data-field="nfLink" value="${escAttr(item.nfLink)}" placeholder="Colar link do Drive" style="font-size:11px;">
+          ${item.nfLink ? `<a href="${escAttr(item.nfLink)}" target="_blank" rel="noopener" title="Abrir NF" style="flex:none;text-decoration:none;font-size:14px;">📎</a>` : ''}
+        </div>
+      </td>
+      <td><input class="cell-input mono" data-field="vencimento" type="date" value="${item.vencimento||''}"></td>
+      <td>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);">
+          <input type="checkbox" data-field="pago" ${item.pago?'checked':''}> pago
+        </label>
+        <span class="badge ${materialStatus(item).cls}" style="margin-top:4px;display:inline-block;">${materialStatus(item).label}</span>
+      </td>
+      <td><button class="icon-btn" data-action="del-material">✕</button></td>
+    </tr>
+  `;
+
+  const linhaLeitor = (item) => `
+    <tr data-id="${item.id}">
+      <td>${escAttr(item.nome) || '<span style="color:var(--text-faint)">—</span>'}</td>
+      <td>${escAttr(item.fornecedor) || '<span style="color:var(--text-faint)">—</span>'}</td>
+      <td class="mono-cell">${fmtBRL(item.valor)}</td>
+      <td class="mono-cell">${escAttr(item.nf) || '<span style="color:var(--text-faint)">—</span>'}</td>
+      <td>${item.nfLink ? `<a href="${escAttr(item.nfLink)}" target="_blank" rel="noopener" style="color:var(--accent-amber);">📎 Ver NF</a>` : '<span style="color:var(--text-faint)">—</span>'}</td>
+      <td class="mono-cell">${item.vencimento ? item.vencimento.split('-').reverse().join('/') : '<span style="color:var(--text-faint)">—</span>'}</td>
+      <td><span class="badge ${materialStatus(item).cls}">${materialStatus(item).label}</span></td>
+    </tr>
+  `;
+
   return `
     <div class="panel">
       <h3>Materiais comprados — ${o.nome}</h3>
-      <p class="desc">Registre material, valor, número da nota fiscal e vencimento do boleto.</p>
+      <p class="desc">${isEditor ? 'Registre material, valor, número da nota fiscal e vencimento do boleto.' : 'Acompanhamento dos materiais comprados nesta obra.'}</p>
+      <p class="desc" style="margin-top:-14px;">
+        📁 <a href="${PASTA_NFS_URL}" target="_blank" rel="noopener" style="color:var(--accent-amber);">Abrir pasta de NFs desta obra no Google Drive</a>
+      </p>
+
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px;padding:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);">
+        <div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;margin-bottom:4px;">Filtrar vencimento de</div>
+          <input class="cell-input mono" type="date" id="filtro-materiais-de" value="${filtros.materiaisDe}" style="width:150px;">
+        </div>
+        <div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;margin-bottom:4px;">até</div>
+          <input class="cell-input mono" type="date" id="filtro-materiais-ate" value="${filtros.materiaisAte}" style="width:150px;">
+        </div>
+        ${filtroAtivo ? `<button class="mark-paid-btn" data-action="limpar-filtro-materiais">limpar filtro</button>` : ''}
+      </div>
 
       <div class="summary-bar">
-        <div class="summary-item"><div class="label">Total investido</div><div class="val">${fmtBRL(totalValor)}</div></div>
+        <div class="summary-item"><div class="label">Total investido${filtroAtivo?' (filtrado)':''}</div><div class="val">${fmtBRL(totalValor)}</div></div>
         <div class="summary-item"><div class="label">Pendentes</div><div class="val warn">${pendCount}</div></div>
         <div class="summary-item"><div class="label">Vencidos</div><div class="val danger">${vencCount}</div></div>
       </div>
@@ -683,33 +806,38 @@ function renderMateriais(key){
       <div class="table-wrap">
       <table>
         <thead><tr>
-          <th style="width:26%">Material</th>
-          <th style="width:14%">Valor</th>
-          <th style="width:16%">Nº NF</th>
-          <th style="width:16%">Venc. boleto</th>
-          <th style="width:14%">Status</th>
-          <th style="width:6%"></th>
+          ${isEditor ? `
+          <th style="width:17%">Material</th>
+          <th style="width:13%">Fornecedor</th>
+          <th style="width:9%">Valor</th>
+          <th style="width:9%">Nº NF</th>
+          <th style="width:15%">NF (link do Drive)</th>
+          <th style="width:12%">Venc. boleto</th>
+          <th style="width:12%">Status</th>
+          <th style="width:5%"></th>
+          ` : `
+          <th style="width:20%">Material</th>
+          <th style="width:15%">Fornecedor</th>
+          <th style="width:11%">Valor</th>
+          <th style="width:10%">Nº NF</th>
+          <th style="width:14%">NF</th>
+          <th style="width:14%">Venc. boleto</th>
+          <th style="width:16%">Status</th>
+          `}
         </tr></thead>
         <tbody>
-          ${items.map(item => `
-            <tr data-id="${item.id}">
-              <td><input class="cell-input" data-field="nome" value="${escAttr(item.nome)}" placeholder="Ex.: Cimento CP-II 50kg"></td>
-              <td><input class="cell-input mono" data-field="valor" type="number" step="0.01" value="${item.valor||''}" placeholder="0,00"></td>
-              <td><input class="cell-input mono" data-field="nf" value="${escAttr(item.nf)}" placeholder="000123"></td>
-              <td><input class="cell-input mono" data-field="vencimento" type="date" value="${item.vencimento||''}"></td>
-              <td>
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);">
-                  <input type="checkbox" data-field="pago" ${item.pago?'checked':''}> pago
-                </label>
-                <span class="badge ${materialStatus(item).cls}" style="margin-top:4px;display:inline-block;">${materialStatus(item).label}</span>
-              </td>
-              <td><button class="icon-btn" data-action="del-material">✕</button></td>
-            </tr>
-          `).join('')}
+          ${items.map(item => isEditor ? linhaEditor(item) : linhaLeitor(item)).join('')}
         </tbody>
       </table>
       </div>
+      ${items.length===0 ? `<p class="desc" style="margin-top:12px;">Nenhum material encontrado${filtroAtivo?' para esse período':''}.</p>` : ''}
+
+      ${isEditor ? `
       <button class="add-btn" data-action="add-material">+ adicionar material</button>
+
+      <div style="margin-top:10px;font-size:12px;color:var(--text-faint);">
+        💡 Dica: crie uma pasta no Google Drive só para as NFs dessa obra, suba os arquivos lá, clique com o botão direito → Compartilhar → Copiar link, e cole na coluna "NF (link do Drive)" de cada material.
+      </div>
 
       <div class="lista-compra">
         <h4>📋 Lista de compra — adicionar vários materiais de uma vez</h4>
@@ -717,13 +845,14 @@ function renderMateriais(key){
         <textarea id="lista-compra-texto" placeholder="Ex.:&#10;Cimento CP-II 50kg&#10;Areia média (m³)&#10;Tijolo baiano&#10;Vergalhão 3/8"></textarea>
         <button class="add-btn" data-action="add-lista-compra">+ adicionar lista completa</button>
       </div>
+      ` : ''}
     </div>
   `;
 }
 
 /* ---------- LOCAÇÕES ---------- */
 function sumRenovacoes(item){
-  return (item.renovacoes||[]).reduce((s,r)=> s + (Number(r.valor)||0), 0);
+  return (item.historicoRenovacoes||[]).reduce((s,r)=> s + (Number(r.valor)||0), 0);
 }
 
 function totalComRenovacoes(item){
@@ -740,80 +869,42 @@ function fmtDataBR(iso){
 
 function renderLocacoes(key){
   const o = state.obras[key];
-  const items = o.locacoes || [];
+  const allItems = o.locacoes || [];
+  const items = allItems.filter(i => {
+    if(filtros.locacoesDe && (!i.inicio || i.inicio < filtros.locacoesDe)) return false;
+    if(filtros.locacoesAte && (!i.inicio || i.inicio > filtros.locacoesAte)) return false;
+    return true;
+  });
   const totalValor = items.reduce((s,i)=> s + totalComRenovacoes(i), 0);
-  const totalRenovacoes = items.reduce((s,i)=> s + (i.renovacoes||[]).length, 0);
+  const filtroAtivo = filtros.locacoesDe || filtros.locacoesAte;
+  const totalRenovacoes = items.reduce((s,i)=>s+((i.historicoRenovacoes||[]).length),0);
+  const colCount = isEditor ? 9 : 8;
 
-  return `
-    <div class="panel">
-      <h3>Locações necessárias — ${o.nome}</h3>
-      <p class="desc">Equipamentos e serviços locados para a obra. Ao renovar uma locação, registre a data e o valor da renovação: o total já soma o valor inicial com todas as renovações.</p>
-
-      <div class="summary-bar">
-        <div class="summary-item"><div class="label">Total em locações (c/ renovações)</div><div class="val" id="summary-total-locacoes">${fmtBRL(totalValor)}</div></div>
-        <div class="summary-item"><div class="label">Itens ativos</div><div class="val ok">${items.filter(i=>i.status==='Ativa').length}</div></div>
-        <div class="summary-item"><div class="label">Renovações registradas</div><div class="val">${totalRenovacoes}</div></div>
-      </div>
-
-      <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th style="width:20%">Equipamento / Serviço</th>
-          <th style="width:15%">Fornecedor</th>
-          <th style="width:10%">Início</th>
-          <th style="width:10%">Fim</th>
-          <th style="width:12%">Valor inicial</th>
-          <th style="width:10%">Status</th>
-          <th style="width:14%">Total c/ renovações</th>
-          <th style="width:4%"></th>
-        </tr></thead>
-        <tbody>
-          ${items.map(item => renderLocacaoRows(item)).join('')}
-        </tbody>
-      </table>
-      </div>
-      <button class="add-btn" data-action="add-locacao">+ adicionar locação</button>
-    </div>
-  `;
-}
-
-function renderLocacaoRows(item){
-  const renovs = item.renovacoes || [];
-  const totalRenov = sumRenovacoes(item);
-  const totalItem = totalComRenovacoes(item);
-  const ultimaRenov = renovs.length ? renovs[renovs.length-1] : null;
-
-  return `
-    <tr data-id="${item.id}">
-      <td><input class="cell-input" data-field="equipamento" value="${escAttr(item.equipamento)}" placeholder="Ex.: Betoneira"></td>
-      <td><input class="cell-input" data-field="fornecedor" value="${escAttr(item.fornecedor)}" placeholder="Nome do fornecedor"></td>
-      <td><input class="cell-input mono" data-field="inicio" type="date" value="${item.inicio||''}"></td>
-      <td><input class="cell-input mono" data-field="fim" type="date" value="${item.fim||''}"></td>
-      <td><input class="cell-input mono" data-field="valor" type="number" step="0.01" value="${item.valor||''}" placeholder="0,00"></td>
-      <td>
-        <select class="cell-input" data-field="status">
-          ${['Pendente','Ativa','Concluída'].map(s=>`<option value="${s}" ${item.status===s?'selected':''}>${s}</option>`).join('')}
-        </select>
-      </td>
-      <td class="mono-cell" data-item-total-cell="${item.id}">
-        ${fmtBRL(totalItem)}
-        ${renovs.length ? `<div style="font-size:10px;color:var(--text-faint);margin-top:2px;">${renovs.length} renovação(ões)</div>` : ''}
-      </td>
-      <td><button class="icon-btn" data-action="del-locacao">✕</button></td>
-    </tr>
+  const renovBlock = (item) => {
+    const renovs = item.historicoRenovacoes || [];
+    const totalRenov = sumRenovacoes(item);
+    const totalItem = totalComRenovacoes(item);
+    const ultimaRenov = renovs.length ? renovs[renovs.length-1] : null;
+    return `
     <tr class="renov-tr" data-renov-parent="${item.id}">
-      <td colspan="8">
+      <td colspan="${colCount}">
         <div class="renov-block">
           <h5>🔄 Renovações <span data-item-header="${item.id}">${ultimaRenov ? `— renovada pela última vez em ${fmtDataBR(ultimaRenov.data)}` : '— ainda não renovada'}</span></h5>
-          ${renovs.length ? renovs.map((r,idx) => `
+          ${renovs.length ? renovs.map((r,idx) => isEditor ? `
             <div class="renov-item" data-renov-id="${r.id}">
               <span class="renov-label">Renovação ${idx+1}</span>
               <input class="cell-input mono" data-renov-field="data" type="date" value="${r.data||''}" title="Data em que a locação foi renovada">
               <input class="cell-input mono" data-renov-field="valor" type="number" step="0.01" value="${r.valor||''}" placeholder="0,00" title="Valor pago nessa renovação">
               <button class="icon-btn" data-action="del-renovacao" title="Remover renovação">✕</button>
             </div>
+          ` : `
+            <div class="renov-item">
+              <span class="renov-label">Renovação ${idx+1}</span>
+              <span class="mono-cell">${fmtDataBR(r.data) || '—'}</span>
+              <span class="mono-cell">${fmtBRL(r.valor)}</span>
+            </div>
           `).join('') : `<p class="desc" style="margin:0 0 8px;">Nenhuma renovação registrada ainda.</p>`}
-          <button class="add-btn" data-action="add-renovacao" style="margin-top:${renovs.length ? '10px' : '0'};">+ registrar renovação</button>
+          ${isEditor ? `<button class="add-btn" data-action="add-renovacao" style="margin-top:${renovs.length ? '10px' : '0'};">+ registrar renovação</button>` : ''}
           <div class="renov-total">
             <span>Valor inicial: ${fmtBRL(Number(item.valor)||0)} + Renovações (<span data-item-renov-count="${item.id}">${renovs.length}</span>): <span data-item-renov-sum="${item.id}">${fmtBRL(totalRenov)}</span></span>
             <b data-item-total-badge="${item.id}">Total: ${fmtBRL(totalItem)}</b>
@@ -821,6 +912,105 @@ function renderLocacaoRows(item){
         </div>
       </td>
     </tr>
+    `;
+  };
+
+  const linhaEditor = (item) => `
+    <tr data-id="${item.id}">
+      <td><input class="cell-input" data-field="equipamento" value="${escAttr(item.equipamento)}" placeholder="Ex.: Betoneira"></td>
+      <td><input class="cell-input" data-field="fornecedor" value="${escAttr(item.fornecedor)}" placeholder="Nome do fornecedor"></td>
+      <td><input class="cell-input mono" data-field="inicio" type="date" value="${item.inicio||''}"></td>
+      <td><input class="cell-input mono" data-field="fim" type="date" value="${item.fim||''}"></td>
+      <td><input class="cell-input mono" data-field="valor" type="number" step="0.01" value="${item.valor||''}" placeholder="0,00"></td>
+      <td>
+        <div style="display:flex;gap:4px;align-items:center;">
+          <input class="cell-input" data-field="nfLink" value="${escAttr(item.nfLink)}" placeholder="Colar link do Drive" style="font-size:11px;">
+          ${item.nfLink ? `<a href="${escAttr(item.nfLink)}" target="_blank" rel="noopener" title="Abrir NF" style="flex:none;text-decoration:none;font-size:14px;">📎</a>` : ''}
+        </div>
+      </td>
+      <td>
+        <select class="cell-input" data-field="status">
+          ${['Pendente','Ativa','Concluída'].map(s=>`<option value="${s}" ${item.status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </td>
+      <td class="mono-cell" data-item-total-cell="${item.id}">
+        ${fmtBRL(totalComRenovacoes(item))}
+        ${(item.historicoRenovacoes||[]).length ? `<div style="font-size:10px;color:var(--text-faint);margin-top:2px;">${(item.historicoRenovacoes||[]).length} renovação(ões)</div>` : ''}
+      </td>
+      <td><button class="icon-btn" data-action="del-locacao">✕</button></td>
+    </tr>
+    ${renovBlock(item)}
+  `;
+
+  const linhaLeitor = (item) => `
+    <tr data-id="${item.id}">
+      <td>${escAttr(item.equipamento) || '<span style="color:var(--text-faint)">—</span>'}</td>
+      <td>${escAttr(item.fornecedor) || '<span style="color:var(--text-faint)">—</span>'}</td>
+      <td class="mono-cell">${item.inicio ? item.inicio.split('-').reverse().join('/') : '<span style="color:var(--text-faint)">—</span>'}</td>
+      <td class="mono-cell">${item.fim ? item.fim.split('-').reverse().join('/') : '<span style="color:var(--text-faint)">—</span>'}</td>
+      <td class="mono-cell">${fmtBRL(item.valor)}</td>
+      <td>${item.nfLink ? `<a href="${escAttr(item.nfLink)}" target="_blank" rel="noopener" style="color:var(--accent-amber);">📎 Ver NF</a>` : '<span style="color:var(--text-faint)">—</span>'}</td>
+      <td><span class="badge ${item.status==='Ativa'?'ok':(item.status==='Concluída'?'warn':'danger')}">${escAttr(item.status)||'—'}</span></td>
+      <td class="mono-cell">${fmtBRL(totalComRenovacoes(item))}</td>
+    </tr>
+    ${renovBlock(item)}
+  `;
+
+  return `
+    <div class="panel">
+      <h3>Locações necessárias — ${o.nome}</h3>
+      <p class="desc">${isEditor ? 'Equipamentos e serviços locados para a obra. Ao renovar, registre a data e o valor: o total já soma o valor inicial com todas as renovações.' : 'Acompanhamento das locações desta obra.'}</p>
+
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px;padding:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);">
+        <div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;margin-bottom:4px;">Filtrar início de</div>
+          <input class="cell-input mono" type="date" id="filtro-locacoes-de" value="${filtros.locacoesDe}" style="width:150px;">
+        </div>
+        <div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;margin-bottom:4px;">até</div>
+          <input class="cell-input mono" type="date" id="filtro-locacoes-ate" value="${filtros.locacoesAte}" style="width:150px;">
+        </div>
+        ${filtroAtivo ? `<button class="mark-paid-btn" data-action="limpar-filtro-locacoes">limpar filtro</button>` : ''}
+      </div>
+
+      <div class="summary-bar">
+        <div class="summary-item"><div class="label">Total em locações${filtroAtivo?' (filtrado)':''} (c/ renovações)</div><div class="val" id="summary-total-locacoes">${fmtBRL(totalValor)}</div></div>
+        <div class="summary-item"><div class="label">Itens ativos</div><div class="val ok">${items.filter(i=>i.status==='Ativa').length}</div></div>
+        <div class="summary-item"><div class="label">Renovações registradas</div><div class="val ok">${totalRenovacoes}</div></div>
+      </div>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr>
+          ${isEditor ? `
+          <th style="width:15%">Equipamento / Serviço</th>
+          <th style="width:12%">Fornecedor</th>
+          <th style="width:9%">Início</th>
+          <th style="width:9%">Fim</th>
+          <th style="width:9%">Valor inicial</th>
+          <th style="width:13%">NF (link do Drive)</th>
+          <th style="width:9%">Status</th>
+          <th style="width:12%">Total c/ renovações</th>
+          <th style="width:5%"></th>
+          ` : `
+          <th style="width:17%">Equipamento / Serviço</th>
+          <th style="width:14%">Fornecedor</th>
+          <th style="width:10%">Início</th>
+          <th style="width:10%">Fim</th>
+          <th style="width:10%">Valor inicial</th>
+          <th style="width:12%">NF</th>
+          <th style="width:11%">Status</th>
+          <th style="width:12%">Total c/ renovações</th>
+          `}
+        </tr></thead>
+        <tbody>
+          ${items.map(item => isEditor ? linhaEditor(item) : linhaLeitor(item)).join('')}
+        </tbody>
+      </table>
+      </div>
+      ${items.length===0 ? `<p class="desc" style="margin-top:12px;">Nenhuma locação encontrada${filtroAtivo?' para esse período':''}.</p>` : ''}
+      ${isEditor ? `<button class="add-btn" data-action="add-locacao">+ adicionar locação</button>` : ''}
+    </div>
   `;
 }
 
@@ -921,6 +1111,43 @@ function renderInventario(key){
   `;
 }
 
+/* ---------- RESUMO GERAL ---------- */
+function calcularDiariasPagas(o){
+  if(o.diarias === undefined) return 0;
+  return calcPagoGeral(o).totalValor;
+}
+
+function renderResumo(key){
+  const o = state.obras[key];
+
+  const somaMateriais = (o.materiais||[]).reduce((s,i)=>s+(Number(i.valor)||0),0);
+  const somaLocacoes = (o.locacoes||[]).reduce((s,i)=>s+totalComRenovacoes(i),0);
+  const somaDiariasPagas = calcularDiariasPagas(o);
+  const totalRealizado = somaMateriais + somaLocacoes + somaDiariasPagas;
+
+  return `
+    <div class="panel">
+      <h3>Resumo Geral — ${o.nome}</h3>
+      <p class="desc">Somatório de tudo que já foi efetivamente gasto na obra até agora.</p>
+
+      <div class="summary-bar">
+        <div class="summary-item"><div class="label">Materiais</div><div class="val">${fmtBRL(somaMateriais)}</div></div>
+        <div class="summary-item"><div class="label">Locações</div><div class="val">${fmtBRL(somaLocacoes)}</div></div>
+        <div class="summary-item"><div class="label">Diárias pagas</div><div class="val">${fmtBRL(somaDiariasPagas)}</div></div>
+        <div class="summary-item"><div class="label">Total já realizado</div><div class="val" style="color:var(--accent-amber);font-size:22px;">${fmtBRL(totalRealizado)}</div></div>
+      </div>
+
+      <div class="calc-pagamento">
+        <h4>Como esse total é calculado</h4>
+        <p class="desc">
+          Total já realizado = Materiais (${fmtBRL(somaMateriais)}) + Locações (${fmtBRL(somaLocacoes)}) + Diárias já pagas (${fmtBRL(somaDiariasPagas)}).
+          <br>Esse valor representa o custo real que já saiu do caixa da obra até agora.
+        </p>
+      </div>
+    </div>
+  `;
+}
+
 function escAttr(v){
   if(v===undefined || v===null) return '';
   return String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
@@ -928,12 +1155,10 @@ function escAttr(v){
 
 /* ---------- EVENTS ---------- */
 function bindGlobalEvents(){
-  document.querySelectorAll('[data-action="switch-obra"]').forEach(el=>{
-    el.addEventListener('click', ()=>{
-      state.activeObra = el.dataset.obra;
-      render();
-    });
-  });
+  const unlockBtn = document.querySelector('[data-action="unlock-editor"]');
+  if(unlockBtn) unlockBtn.addEventListener('click', tryUnlockEditor);
+  const lockBtn = document.querySelector('[data-action="lock-editor"]');
+  if(lockBtn) lockBtn.addEventListener('click', lockEditor);
   document.querySelectorAll('[data-action="tab"]').forEach(el=>{
     el.addEventListener('click', ()=>{
       state.activeTab[state.activeObra] = el.dataset.tab;
@@ -1066,47 +1291,35 @@ function bindTabEvents(){
 
 
   if(tab === 'materiais'){
-    bindListTab(content, o.materiais, 'del-material', renderMateriais, key);
+    if(isEditor) bindListTab(content, o.materiais, 'del-material', renderMateriais, key);
+    const fDe = content.querySelector('#filtro-materiais-de');
+    const fAte = content.querySelector('#filtro-materiais-ate');
+    if(fDe) fDe.addEventListener('change', ()=>{ filtros.materiaisDe = fDe.value; content.innerHTML = renderMateriais(key); bindTabEvents(); });
+    if(fAte) fAte.addEventListener('change', ()=>{ filtros.materiaisAte = fAte.value; content.innerHTML = renderMateriais(key); bindTabEvents(); });
+    const limparF = content.querySelector('[data-action="limpar-filtro-materiais"]');
+    if(limparF) limparF.addEventListener('click', ()=>{ filtros.materiaisDe=''; filtros.materiaisAte=''; content.innerHTML = renderMateriais(key); bindTabEvents(); });
   }
   if(tab === 'locacoes'){
-    bindListTab(content, o.locacoes, 'del-locacao', renderLocacoes, key);
-    bindLocacaoValorLive(content, o);
-    bindRenovEvents(content, key);
+    if(isEditor) bindListTab(content, o.locacoes, 'del-locacao', renderLocacoes, key);
+    const lDe = content.querySelector('#filtro-locacoes-de');
+    const lAte = content.querySelector('#filtro-locacoes-ate');
+    if(lDe) lDe.addEventListener('change', ()=>{ filtros.locacoesDe = lDe.value; content.innerHTML = renderLocacoes(key); bindTabEvents(); });
+    if(lAte) lAte.addEventListener('change', ()=>{ filtros.locacoesAte = lAte.value; content.innerHTML = renderLocacoes(key); bindTabEvents(); });
+    const limparL = content.querySelector('[data-action="limpar-filtro-locacoes"]');
+    if(limparL) limparL.addEventListener('click', ()=>{ filtros.locacoesDe=''; filtros.locacoesAte=''; content.innerHTML = renderLocacoes(key); bindTabEvents(); });
+    if(isEditor){
+      bindLocacaoValorLive(content, o);
+      bindRenovEvents(content, key);
+    }
   }
   if(tab === 'inventario'){
-    bindListTab(content, o.inventario, 'del-inventario', renderInventario, key);
-  }
-  if(tab === 'faturamento'){
-    const inputContratado = content.querySelector('#input-contratado');
-    if(inputContratado){
-      inputContratado.addEventListener('input', ()=>{
-        o.faturamento.contratado = Number(inputContratado.value);
-        persist();
-        // update saldo/faturado displays without full rerender loss of focus
-        const saldo = (Number(o.faturamento.contratado)||0) - sumMedicoes(o);
-        const saldoEl = content.querySelector('.fat-card.saldo .val-display');
-        if(saldoEl){
-          saldoEl.textContent = fmtBRL(saldo);
-          saldoEl.className = 'val-display ' + (saldo<0?'danger':'ok');
-        }
-      });
-    }
-    bindListTab(content, o.faturamento.medicoes, 'del-medicao', renderFaturamento, key, true);
-    const addBtn = content.querySelector('[data-action="add-medicao"]');
-    if(addBtn){
-      addBtn.addEventListener('click', ()=>{
-        o.faturamento.medicoes.push({id: uid(), data:'', descricao:'', valor:''});
-        persist();
-        content.innerHTML = renderFaturamento(key);
-        bindTabEvents();
-      });
-    }
+    if(isEditor) bindListTab(content, o.inventario, 'del-inventario', renderInventario, key);
   }
 
   // add buttons for materiais / locacoes / inventario
   const addMaterial = content.querySelector('[data-action="add-material"]');
   if(addMaterial) addMaterial.addEventListener('click', ()=>{
-    o.materiais.push({id: uid(), nome:'', valor:'', nf:'', vencimento:'', pago:false});
+    o.materiais.push({id: uid(), nome:'', fornecedor:'', valor:'', nf:'', nfLink:'', vencimento:'', pago:false});
     persist(); content.innerHTML = renderMateriais(key); bindTabEvents();
   });
   const addListaCompra = content.querySelector('[data-action="add-lista-compra"]');
@@ -1115,7 +1328,7 @@ function bindTabEvents(){
     if(!textarea) return;
     const linhas = textarea.value.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
     linhas.forEach(nome=>{
-      o.materiais.push({id: uid(), nome, valor:'', nf:'', vencimento:'', pago:false});
+      o.materiais.push({id: uid(), nome, fornecedor:'', valor:'', nf:'', nfLink:'', vencimento:'', pago:false});
     });
     if(linhas.length>0){
       persist();
@@ -1125,7 +1338,7 @@ function bindTabEvents(){
   });
   const addLocacao = content.querySelector('[data-action="add-locacao"]');
   if(addLocacao) addLocacao.addEventListener('click', ()=>{
-    o.locacoes.push({id: uid(), equipamento:'', fornecedor:'', inicio:'', fim:'', valor:'', status:'Pendente', renovacoes: []});
+    o.locacoes.push({id: uid(), equipamento:'', fornecedor:'', inicio:'', fim:'', valor:'', nfLink:'', status:'Pendente', historicoRenovacoes:[]});
     persist(); content.innerHTML = renderLocacoes(key); bindTabEvents();
   });
   const addInventario = content.querySelector('[data-action="add-inventario"]');
@@ -1142,12 +1355,12 @@ function bindListTab(content, list, delAction, renderFn, key, isMedicao){
     if(!item) return;
     row.querySelectorAll('[data-field]').forEach(field=>{
       const f = field.dataset.field;
-      const evt = (field.type === 'checkbox' || field.tagName==='SELECT') ? 'change' : 'input';
+      const evt = (field.type === 'checkbox' || field.tagName==='SELECT' || f==='nfLink') ? 'change' : 'input';
       field.addEventListener(evt, ()=>{
         item[f] = field.type === 'checkbox' ? field.checked : field.value;
         persist();
         // Live re-render for fields affecting status/badges without losing focus on text inputs
-        if(field.type === 'checkbox' || f==='vencimento' || field.tagName==='SELECT'){
+        if(field.type === 'checkbox' || f==='vencimento' || f==='nfLink' || field.tagName==='SELECT'){
           content.innerHTML = renderFn(key);
           bindTabEvents();
         }
@@ -1174,17 +1387,17 @@ function updateLocacaoItemTotals(content, o, item){
   const renovSumEl = content.querySelector(`[data-item-renov-sum="${item.id}"]`);
   if(renovSumEl) renovSumEl.textContent = fmtBRL(totalRenov);
   const renovCountEl = content.querySelector(`[data-item-renov-count="${item.id}"]`);
-  if(renovCountEl) renovCountEl.textContent = (item.renovacoes||[]).length;
+  if(renovCountEl) renovCountEl.textContent = (item.historicoRenovacoes||[]).length;
   const totalBadgeEl = content.querySelector(`[data-item-total-badge="${item.id}"]`);
   if(totalBadgeEl) totalBadgeEl.textContent = 'Total: ' + fmtBRL(totalItem);
   const totalCellEl = content.querySelector(`[data-item-total-cell="${item.id}"]`);
   if(totalCellEl){
-    const count = (item.renovacoes||[]).length;
+    const count = (item.historicoRenovacoes||[]).length;
     totalCellEl.innerHTML = fmtBRL(totalItem) + (count ? `<div style="font-size:10px;color:var(--text-faint);margin-top:2px;">${count} renovação(ões)</div>` : '');
   }
   const headerEl = content.querySelector(`[data-item-header="${item.id}"]`);
   if(headerEl){
-    const renovs = item.renovacoes || [];
+    const renovs = item.historicoRenovacoes || [];
     const ultima = renovs.length ? renovs[renovs.length-1] : null;
     headerEl.textContent = ultima ? `— renovada pela última vez em ${fmtDataBR(ultima.data)}` : '— ainda não renovada';
   }
@@ -1217,7 +1430,7 @@ function bindRenovEvents(content, key){
       inp.addEventListener('input', ()=>{
         const renovEl = inp.closest('[data-renov-id]');
         const renovId = renovEl.dataset.renovId;
-        const renov = (item.renovacoes||[]).find(r=>r.id===renovId);
+        const renov = (item.historicoRenovacoes||[]).find(r=>r.id===renovId);
         if(!renov) return;
         renov[inp.dataset.renovField] = inp.value;
         persist();
@@ -1229,7 +1442,7 @@ function bindRenovEvents(content, key){
       btn.addEventListener('click', ()=>{
         const renovEl = btn.closest('[data-renov-id]');
         const renovId = renovEl.dataset.renovId;
-        item.renovacoes = (item.renovacoes||[]).filter(r=>r.id!==renovId);
+        item.historicoRenovacoes = (item.historicoRenovacoes||[]).filter(r=>r.id!==renovId);
         persist();
         content.innerHTML = renderLocacoes(key);
         bindTabEvents();
@@ -1239,8 +1452,8 @@ function bindRenovEvents(content, key){
     const addBtn = tr.querySelector('[data-action="add-renovacao"]');
     if(addBtn){
       addBtn.addEventListener('click', ()=>{
-        if(!item.renovacoes) item.renovacoes = [];
-        item.renovacoes.push({id: uid(), data: todayISO, valor: ''});
+        if(!item.historicoRenovacoes) item.historicoRenovacoes = [];
+        item.historicoRenovacoes.push({id: uid(), data: todayISO, valor: ''});
         persist();
         content.innerHTML = renderLocacoes(key);
         bindTabEvents();
